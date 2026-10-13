@@ -1,0 +1,579 @@
+{
+  "version": 1,
+  "project": {
+    "id": "example-checkout",
+    "name": "Contoh: Checkout Toko Online",
+    "description": "Contoh lengkap: page, input, API, backend, database, layanan eksternal, decision \"Ask me\", jalur gagal, dan cabang paralel. Klik node untuk membaca penjelasannya.",
+    "version": 1,
+    "createdAt": "2026-10-13T09:52:25.406Z",
+    "updatedAt": "2026-10-13T09:52:25.406Z",
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "position": {
+          "x": 36,
+          "y": 0
+        },
+        "data": {
+          "duration": 300,
+          "label": "Pelanggan",
+          "description": "Titik awal. Initial payload = data awal yang dibawa token.",
+          "payload": "{\n  \"customer_id\": 88,\n  \"customer\": \"Budi Santoso\"\n}"
+        }
+      },
+      {
+        "id": "cart",
+        "type": "page",
+        "position": {
+          "x": 0,
+          "y": 120
+        },
+        "data": {
+          "duration": 600,
+          "label": "Halaman Keranjang",
+          "config": {
+            "route": "/cart"
+          },
+          "description": "Page / UI: layar yang dilihat user."
+        }
+      },
+      {
+        "id": "checkout",
+        "type": "input",
+        "position": {
+          "x": 0,
+          "y": 240
+        },
+        "data": {
+          "duration": 700,
+          "label": "Klik Checkout",
+          "config": {
+            "fields": "cart_id, alamat, kurir"
+          },
+          "description": "User Input: data yang dikirim user. Payload-nya digabung ke data token.",
+          "payload": "{\n  \"cart_id\": \"CRT-1029\",\n  \"items\": 2,\n  \"total\": 250000,\n  \"kurir\": \"JNE REG\"\n}"
+        }
+      },
+      {
+        "id": "api",
+        "type": "api",
+        "position": {
+          "x": 0,
+          "y": 360
+        },
+        "data": {
+          "duration": 900,
+          "label": "Buat Order",
+          "config": {
+            "method": "POST",
+            "endpoint": "/api/orders",
+            "statusCode": 201,
+            "response": "{\n  \"order_id\": \"ORD-5531\",\n  \"status\": \"PENDING\"\n}"
+          },
+          "description": "Coba ubah Status code ke 500: token akan mengikuti handle merah (FAILED)."
+        }
+      },
+      {
+        "id": "ctrl",
+        "type": "backend",
+        "position": {
+          "x": 0,
+          "y": 480
+        },
+        "data": {
+          "duration": 600,
+          "label": "OrderController",
+          "config": {
+            "handler": "store()"
+          }
+        }
+      },
+      {
+        "id": "stock",
+        "type": "process",
+        "position": {
+          "x": 0,
+          "y": 600
+        },
+        "data": {
+          "duration": 600,
+          "label": "Validasi Stok",
+          "description": "Aktifkan \"Simulate failure\" untuk melihat jalur Stok Habis."
+        }
+      },
+      {
+        "id": "save",
+        "type": "database",
+        "position": {
+          "x": 0,
+          "y": 720
+        },
+        "data": {
+          "duration": 600,
+          "label": "Simpan Order",
+          "config": {
+            "database": "shop",
+            "table": "orders",
+            "action": "TRANSACTION"
+          }
+        }
+      },
+      {
+        "id": "pay",
+        "type": "external",
+        "position": {
+          "x": 0,
+          "y": 840
+        },
+        "data": {
+          "duration": 1200,
+          "label": "Payment Gateway",
+          "config": {
+            "service": "Midtrans"
+          },
+          "description": "External Service: layanan pihak ketiga. Bisa disimulasikan gagal."
+        }
+      },
+      {
+        "id": "paid",
+        "type": "decision",
+        "position": {
+          "x": 0,
+          "y": 960
+        },
+        "data": {
+          "duration": 600,
+          "label": "Pembayaran lunas?",
+          "config": {
+            "condition": "payment.status == 'settlement'",
+            "outcome": "ASK"
+          },
+          "description": "Outcome \"Ask me\": simulasi berhenti dan kamu memilih TRUE atau FALSE."
+        }
+      },
+      {
+        "id": "markpaid",
+        "type": "database",
+        "position": {
+          "x": 0,
+          "y": 1080
+        },
+        "data": {
+          "duration": 600,
+          "label": "Tandai PAID",
+          "config": {
+            "database": "shop",
+            "table": "orders",
+            "action": "UPDATE"
+          },
+          "payload": "{\n  \"status\": \"PAID\"\n}",
+          "description": "Punya 2 koneksi keluar: keduanya berjalan paralel."
+        }
+      },
+      {
+        "id": "ship",
+        "type": "database",
+        "position": {
+          "x": 0,
+          "y": 1200
+        },
+        "data": {
+          "duration": 600,
+          "label": "Buat Pengiriman",
+          "config": {
+            "database": "shop",
+            "table": "shipments",
+            "action": "INSERT"
+          }
+        }
+      },
+      {
+        "id": "email",
+        "type": "notification",
+        "position": {
+          "x": -300,
+          "y": 1200
+        },
+        "data": {
+          "duration": 600,
+          "label": "Kirim Invoice",
+          "config": {
+            "channel": "Email"
+          }
+        }
+      },
+      {
+        "id": "ok",
+        "type": "output",
+        "position": {
+          "x": 0,
+          "y": 1320
+        },
+        "data": {
+          "duration": 400,
+          "label": "201 Order Dibuat"
+        }
+      },
+      {
+        "id": "success",
+        "type": "page",
+        "position": {
+          "x": 0,
+          "y": 1440
+        },
+        "data": {
+          "duration": 600,
+          "label": "Halaman Sukses",
+          "config": {
+            "route": "/orders/ORD-5531"
+          }
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "position": {
+          "x": 36,
+          "y": 1560
+        },
+        "data": {
+          "duration": 300,
+          "label": "Selesai"
+        }
+      },
+      {
+        "id": "apierr",
+        "type": "error",
+        "position": {
+          "x": 300,
+          "y": 360
+        },
+        "data": {
+          "duration": 400,
+          "label": "Gagal Buat Order",
+          "config": {
+            "code": "500"
+          }
+        }
+      },
+      {
+        "id": "apiend",
+        "type": "end",
+        "position": {
+          "x": 336,
+          "y": 480
+        },
+        "data": {
+          "duration": 300,
+          "label": "Selesai (gagal)"
+        }
+      },
+      {
+        "id": "nostock",
+        "type": "error",
+        "position": {
+          "x": 300,
+          "y": 600
+        },
+        "data": {
+          "duration": 400,
+          "label": "Stok Habis",
+          "config": {
+            "code": "409"
+          }
+        }
+      },
+      {
+        "id": "nostockend",
+        "type": "end",
+        "position": {
+          "x": 336,
+          "y": 720
+        },
+        "data": {
+          "duration": 300,
+          "label": "Selesai (gagal)"
+        }
+      },
+      {
+        "id": "payfail",
+        "type": "error",
+        "position": {
+          "x": 300,
+          "y": 840
+        },
+        "data": {
+          "duration": 400,
+          "label": "Pembayaran Gagal",
+          "config": {
+            "code": "402"
+          }
+        }
+      },
+      {
+        "id": "waiting",
+        "type": "page",
+        "position": {
+          "x": 300,
+          "y": 960
+        },
+        "data": {
+          "duration": 600,
+          "label": "Menunggu Pembayaran",
+          "config": {
+            "route": "/orders/ORD-5531/pay"
+          },
+          "description": "Cabang FALSE dari decision."
+        }
+      },
+      {
+        "id": "waitend",
+        "type": "end",
+        "position": {
+          "x": 336,
+          "y": 1080
+        },
+        "data": {
+          "duration": 300,
+          "label": "Selesai (tunda)"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "type": "flow",
+        "source": "start",
+        "target": "cart",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e2",
+        "type": "flow",
+        "source": "cart",
+        "target": "checkout",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e3",
+        "type": "flow",
+        "source": "checkout",
+        "target": "api",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {
+          "label": "checkout"
+        }
+      },
+      {
+        "id": "e4",
+        "type": "flow",
+        "source": "api",
+        "target": "ctrl",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {
+          "label": "201"
+        }
+      },
+      {
+        "id": "e5",
+        "type": "flow",
+        "source": "api",
+        "target": "apierr",
+        "sourceHandle": "fail",
+        "targetHandle": "left",
+        "data": {
+          "branch": "FAILED",
+          "label": "failed"
+        }
+      },
+      {
+        "id": "e6",
+        "type": "flow",
+        "source": "ctrl",
+        "target": "stock",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e7",
+        "type": "flow",
+        "source": "stock",
+        "target": "save",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {
+          "label": "stok ada"
+        }
+      },
+      {
+        "id": "e8",
+        "type": "flow",
+        "source": "stock",
+        "target": "nostock",
+        "sourceHandle": "fail",
+        "targetHandle": "left",
+        "data": {
+          "branch": "FAILED",
+          "label": "habis"
+        }
+      },
+      {
+        "id": "e9",
+        "type": "flow",
+        "source": "save",
+        "target": "pay",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e10",
+        "type": "flow",
+        "source": "pay",
+        "target": "paid",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e11",
+        "type": "flow",
+        "source": "pay",
+        "target": "payfail",
+        "sourceHandle": "fail",
+        "targetHandle": "left",
+        "data": {
+          "branch": "FAILED",
+          "label": "failed"
+        }
+      },
+      {
+        "id": "e12",
+        "type": "flow",
+        "source": "paid",
+        "target": "markpaid",
+        "sourceHandle": "true",
+        "targetHandle": "top",
+        "data": {
+          "branch": "TRUE",
+          "label": "lunas"
+        }
+      },
+      {
+        "id": "e13",
+        "type": "flow",
+        "source": "paid",
+        "target": "waiting",
+        "sourceHandle": "false",
+        "targetHandle": "left",
+        "data": {
+          "branch": "FALSE",
+          "label": "belum"
+        }
+      },
+      {
+        "id": "e14",
+        "type": "flow",
+        "source": "markpaid",
+        "target": "ship",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e15",
+        "type": "flow",
+        "source": "markpaid",
+        "target": "email",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e16",
+        "type": "flow",
+        "source": "ship",
+        "target": "ok",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e17",
+        "type": "flow",
+        "source": "email",
+        "target": "ok",
+        "sourceHandle": "out",
+        "targetHandle": "left",
+        "data": {}
+      },
+      {
+        "id": "e18",
+        "type": "flow",
+        "source": "ok",
+        "target": "success",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e19",
+        "type": "flow",
+        "source": "success",
+        "target": "end",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e20",
+        "type": "flow",
+        "source": "apierr",
+        "target": "apiend",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e21",
+        "type": "flow",
+        "source": "nostock",
+        "target": "nostockend",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      },
+      {
+        "id": "e22",
+        "type": "flow",
+        "source": "payfail",
+        "target": "waiting",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {
+          "label": "coba lagi"
+        }
+      },
+      {
+        "id": "e23",
+        "type": "flow",
+        "source": "waiting",
+        "target": "waitend",
+        "sourceHandle": "out",
+        "targetHandle": "top",
+        "data": {}
+      }
+    ],
+    "settings": {
+      "simulationSpeed": 1
+    }
+  }
+}
