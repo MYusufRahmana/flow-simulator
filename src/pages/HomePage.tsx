@@ -72,10 +72,11 @@ export default function HomePage() {
       }}
     >
       <header className="sticky top-0 z-10 flex items-center justify-between p-3">
-        <div className="panel flex h-14 items-center gap-2.5 px-3">
-          <Logo size={30} />
+        <div className="panel flex h-14 items-center gap-3 px-4">
+          <Logo variant="full" size={26} />
+          <span className="h-6 w-px bg-black/8" />
           <div className="leading-tight">
-            <div className="text-[15px] font-semibold">Flow Simulator</div>
+            <div className="text-[14px] font-semibold text-gray-800">Simulator</div>
             <div className="text-[11px] text-gray-500">Local-first · no account needed</div>
           </div>
         </div>
