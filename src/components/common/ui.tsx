@@ -1,18 +1,26 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { X } from 'lucide-react';
+import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
-type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { label: string; shortcut?: string; pressed?: boolean };
+type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  shortcut?: string;
+  pressed?: boolean;
+  /** Visible caption next to the icon. */
+  text?: string;
+};
 
-export function IconButton({ label, shortcut, pressed, children, className = '', ...rest }: IconButtonProps) {
+export function IconButton({ label, shortcut, pressed, text, children, className = '', ...rest }: IconButtonProps) {
   return (
     <button
       type="button"
       aria-label={label}
       title={shortcut ? `${label} (${shortcut})` : label}
       aria-pressed={pressed}
-      className={`icon-btn ${className}`}
+      className={`icon-btn ${text ? 'icon-btn-text' : ''} ${className}`}
       {...rest}
     >
       {children}
+      {text && <span>{text}</span>}
     </button>
   );
 }
@@ -87,16 +95,63 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
   );
 }
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  wide = false,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  /** Wider dialog for content laid out in columns. */
+  wide?: boolean;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
+
+  // Esc closes the dialog wherever focus is. Capture phase so the editor's own shortcuts never see it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeRef.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    // Move focus into the dialog (unless a child already took it) so keys don't act on the canvas behind.
+    if (dialogRef.current && !dialogRef.current.contains(document.activeElement)) dialogRef.current.focus();
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/20 p-4"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      onKeyDown={(e) => e.key === 'Escape' && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-label={title} className="panel fade-in w-full max-w-md p-5">
-        <h2 className="mb-3 text-[15px] font-semibold">{title}</h2>
-        {children}
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`panel fade-in flex max-h-[calc(100vh-2rem)] w-full flex-col outline-none ${wide ? 'max-w-3xl' : 'max-w-md'}`}
+      >
+        <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 pb-3">
+          <h2 className="text-[15px] font-semibold">{title}</h2>
+          <button
+            type="button"
+            aria-label="Close"
+            title="Close (Esc)"
+            onClick={onClose}
+            className="-mr-1.5 flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+          >
+            <X size={16} />
+          </button>
+        </header>
+        <div className="scroll-thin min-h-0 overflow-y-auto px-5 pb-5">{children}</div>
       </div>
     </div>
   );

@@ -1,21 +1,31 @@
 import { useReactFlow } from '@xyflow/react';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Cpu, PanelLeftClose, PanelLeftOpen, Shapes, type LucideIcon } from 'lucide-react';
 import { useFlowStore } from '../../stores/flowStore';
 import { useUiStore } from '../../stores/uiStore';
-import type { NodeKind } from '../../types/flow';
+import type { NodeCategory, NodeKind } from '../../types/flow';
 import { IconButton } from '../common/ui';
 import { DND_TYPE } from '../flow/FlowCanvas';
-import { NODE_GROUPS, NODE_META } from '../nodes/registry';
+import { halfWidthOf, isFlowchartKind, NODE_CATEGORIES, NODE_META } from '../nodes/registry';
+
+const CATEGORY_ICON: Record<NodeCategory, LucideIcon> = { simulation: Cpu, flowchart: Shapes };
 
 export default function NodePalette() {
   const collapsed = useUiStore((s) => s.paletteCollapsed);
   const toggle = useUiStore((s) => s.togglePalette);
+  const categoryId = useUiStore((s) => s.paletteCategory);
+  const setCategory = useUiStore((s) => s.setPaletteCategory);
+  const category = NODE_CATEGORIES.find((c) => c.id === categoryId) ?? NODE_CATEGORIES[0];
   const { screenToFlowPosition } = useReactFlow();
 
   const addAtCenter = (kind: NodeKind) => {
     const p = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const jitter = (useFlowStore.getState().nodes.length % 5) * 24;
-    useFlowStore.getState().addNode(kind, { x: Math.round((p.x - 116 + jitter) / 12) * 12, y: Math.round((p.y - 28 + jitter) / 12) * 12 });
+    const id = useFlowStore.getState().addNode(kind, {
+      x: Math.round((p.x - halfWidthOf(kind) + jitter) / 12) * 12,
+      y: Math.round((p.y - 28 + jitter) / 12) * 12,
+    });
+    // New flowchart shapes open straight into text editing.
+    if (isFlowchartKind(kind)) useUiStore.getState().startEditing(id);
   };
 
   return (
@@ -32,7 +42,50 @@ export default function NodePalette() {
         </IconButton>
       </div>
 
-      {NODE_GROUPS.map((group, gi) => (
+      {collapsed ? (
+        <div className="mt-1 flex flex-col items-center gap-0.5 border-b border-black/8 pb-1.5">
+          {NODE_CATEGORIES.map((c) => {
+            const CatIcon = CATEGORY_ICON[c.id];
+            return (
+              <IconButton
+                key={c.id}
+                label={`${c.name} components`}
+                pressed={c.id === categoryId}
+                onClick={() => setCategory(c.id)}
+                className="!h-8 !w-8"
+              >
+                <CatIcon size={15} />
+              </IconButton>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="px-1 pt-1">
+          <div role="tablist" aria-label="Component category" className="grid grid-cols-2 rounded-lg bg-gray-100 p-0.5">
+            {NODE_CATEGORIES.map((c) => {
+              const CatIcon = CATEGORY_ICON[c.id];
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={c.id === categoryId}
+                  onClick={() => setCategory(c.id)}
+                  className={`flex items-center justify-center gap-1.5 rounded-md py-1 text-xs font-medium transition ${
+                    c.id === categoryId ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  <CatIcon size={13} />
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+          <p className="px-0.5 pt-1.5 text-[11px] leading-snug text-gray-400">{category.hint}</p>
+        </div>
+      )}
+
+      {category.groups.map((group, gi) => (
         <div key={group.name} className={collapsed ? 'flex flex-col items-center' : ''}>
           {collapsed ? (
             gi > 0 && <span className="my-1 h-px w-6 bg-black/8" />

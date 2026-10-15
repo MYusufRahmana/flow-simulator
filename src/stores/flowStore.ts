@@ -7,7 +7,7 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import { create } from 'zustand';
-import { NODE_META } from '../components/nodes/registry';
+import { FLOWCHART_SIZE, NODE_META } from '../components/nodes/registry';
 import type {
   Branch,
   FlowEdge,
@@ -51,6 +51,7 @@ type FlowState = {
   setSelection: (nodeIds: string[], edgeIds: string[]) => void;
   clearSelection: () => void;
   selectNode: (id: string) => void;
+  selectEdge: (id: string) => void;
 
   onNodesChange: (changes: NodeChange<FlowNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<FlowEdge>[]) => void;
@@ -61,19 +62,26 @@ type FlowState = {
   addConnectedNode: (kind: NodeKind, position: { x: number; y: number }, source: string, sourceHandle: string | null) => string;
   updateNodeData: (id: string, patch: Partial<FlowNodeData>) => void;
   updateNodeConfig: (id: string, patch: NonNullable<FlowNodeData['config']>) => void;
+  /** Same patch on several nodes, as one undo step. */
+  updateNodesConfig: (ids: string[], patch: NonNullable<FlowNodeData['config']>) => void;
   changeNodeType: (id: string, kind: NodeKind) => void;
   updateEdgeData: (id: string, patch: Partial<FlowEdgeData>) => void;
   deleteSelection: () => void;
   deleteNode: (id: string) => void;
   deleteEdge: (id: string) => void;
   duplicateSelection: () => void;
+  /** Line selected nodes up on one row (centres level) or one column (centres stacked). */
+  alignSelection: (axis: 'row' | 'column') => void;
   /** Number of nodes on the clipboard (0 = nothing to paste). */
   clipboardCount: number;
   selectAll: () => void;
   /** Copies the selection, or the whole diagram when nothing is selected. Returns the node count. */
   copySelection: () => number;
   cutSelection: () => number;
-  paste: () => number;
+  /** Paste the clipboard; with `at`, its top-left corner lands on that flow position. */
+  paste: (at?: { x: number; y: number }) => number;
+  /** Swap an edge's direction (source <-> target). */
+  reverseEdge: (id: string) => void;
   deleteAll: () => number;
 
   pushHistory: (coalesceKey?: string) => void;
@@ -110,9 +118,61 @@ function cloneNodes(picked: FlowNode[], edges: FlowEdge[], offset: number) {
 }
 
 function branchForHandle(sourceKind: NodeKind | undefined, handle: string | null | undefined): Branch | undefined {
-  if (sourceKind === 'decision') return handle === 'false' ? 'FALSE' : 'TRUE';
+  if (sourceKind === 'decision' || sourceKind === 'fc-decision') return handle === 'false' ? 'FALSE' : 'TRUE';
   if (handle === 'fail') return 'FAILED';
   return undefined;
+}
+
+/** Default edge data for a new connection; flowchart decisions read "Ya" / "Tidak" for presenting. */
+function edgeDataFor(sourceKind: NodeKind | undefined, handle: string | null | undefined): FlowEdgeData {
+  const branch = branchForHandle(sourceKind, handle);
+  if (sourceKind === 'fc-decision') return { branch, label: branch === 'FALSE' ? 'Tidak' : 'Ya' };
+  return { branch, label: branch ? branch.toLowerCase() : undefined };
+}
+
+/** Handles each node kind renders; the first source handle is the main path, the second the side path. */
+function sourceHandlesOf(kind: NodeKind): string[] {
+  if (kind === 'end' || kind === 'fc-text') return [];
+  if (kind === 'decision' || kind === 'fc-decision') return ['true', 'false'];
+  if (NODE_META[kind].category === 'flowchart') return ['out', 'out-right'];
+  return NODE_META[kind].canFail ? ['out', 'fail'] : ['out'];
+}
+function targetHandlesOf(kind: NodeKind): string[] {
+  if (kind === 'start' || kind === 'fc-text') return [];
+  if (kind === 'end' || NODE_META[kind].category === 'flowchart') return ['top', 'left', 'right'];
+  return ['top', 'left'];
+}
+const MAIN_PATH = new Set(['out', 'true']);
+/** Labels the app writes itself; anything else was typed by the user and is kept. */
+const DEFAULT_LABELS = new Set(['true', 'false', 'failed', 'success', 'Ya', 'Tidak']);
+
+/**
+ * Move a node's lines onto the handles of its new kind (main path -> main path, side path -> side path),
+ * or drop them when the new kind has no handle on that side.
+ */
+function retargetEdges(edges: FlowEdge[], id: string, kind: NodeKind): FlowEdge[] {
+  const sources = sourceHandlesOf(kind);
+  const targets = targetHandlesOf(kind);
+  const out: FlowEdge[] = [];
+  for (const e of edges) {
+    let next = e;
+    if (e.source === id) {
+      if (!sources.length) continue;
+      const handle = e.sourceHandle ?? 'out';
+      const mapped = sources.includes(handle) ? handle : MAIN_PATH.has(handle) ? sources[0] : (sources[1] ?? sources[0]);
+      if (mapped !== handle) {
+        const defaults = edgeDataFor(kind, mapped);
+        const custom = e.data?.label && !DEFAULT_LABELS.has(e.data.label) ? e.data.label : undefined;
+        next = { ...next, sourceHandle: mapped, data: { ...e.data, ...defaults, label: custom ?? defaults.label } };
+      }
+    }
+    if (e.target === id) {
+      if (!targets.length) continue;
+      if (!targets.includes(e.targetHandle ?? '')) next = { ...next, targetHandle: 'top' };
+    }
+    out.push(next);
+  }
+  return out;
 }
 
 export const useFlowStore = create<FlowState>((set, get) => {
@@ -180,6 +240,14 @@ export const useFlowStore = create<FlowState>((set, get) => {
         selectedEdgeIds: [],
       })),
 
+    selectEdge: (id) =>
+      set((s) => ({
+        nodes: s.nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+        edges: s.edges.map((e) => (e.selected !== (e.id === id) ? { ...e, selected: e.id === id } : e)),
+        selectedNodeIds: [],
+        selectedEdgeIds: [id],
+      })),
+
     onNodesChange: (changes) => {
       const nodes = applyNodeChanges(changes, get().nodes);
       const meaningful = changes.some((c) => c.type === 'position' || c.type === 'remove' || c.type === 'add');
@@ -195,7 +263,6 @@ export const useFlowStore = create<FlowState>((set, get) => {
       const { nodes, edges, pushHistory } = get();
       const source = nodes.find((n) => n.id === c.source);
       const target = nodes.find((n) => n.id === c.target);
-      const branch = branchForHandle(source?.type, c.sourceHandle);
       const targetHandle =
         c.targetHandle === AUTO_HANDLE && source && target ? pickTargetHandle(source, c.sourceHandle, target) : c.targetHandle;
       pushHistory();
@@ -204,7 +271,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
         targetHandle,
         id: uid('e'),
         type: 'flow',
-        data: { branch, label: branch ? branch.toLowerCase() : undefined },
+        data: edgeDataFor(source?.type, c.sourceHandle),
       };
       changed({ edges: rfAddEdge(edge, edges) as FlowEdge[] });
     },
@@ -230,7 +297,6 @@ export const useFlowStore = create<FlowState>((set, get) => {
       const from = nodes.find((n) => n.id === source);
       const id = uid(kind);
       const node: FlowNode = { id, type: kind, position, data: NODE_META[kind].defaults(), selected: true };
-      const branch = branchForHandle(from?.type, sourceHandle);
       const edge: FlowEdge = {
         id: uid('e'),
         type: 'flow',
@@ -238,7 +304,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
         sourceHandle,
         target: id,
         targetHandle: from ? pickTargetHandle(from, sourceHandle, node) : 'top',
-        data: { branch, label: branch ? branch.toLowerCase() : undefined },
+        data: edgeDataFor(from?.type, sourceHandle),
       };
       changed({
         nodes: [...nodes.map((n) => (n.selected ? { ...n, selected: false } : n)), node],
@@ -258,17 +324,34 @@ export const useFlowStore = create<FlowState>((set, get) => {
         nodes: get().nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, config: { ...n.data.config, ...patch } } } : n)),
       });
     },
+    updateNodesConfig: (ids, patch) => {
+      const picked = new Set(ids);
+      get().pushHistory();
+      changed({
+        nodes: get().nodes.map((n) => (picked.has(n.id) ? { ...n, data: { ...n.data, config: { ...n.data.config, ...patch } } } : n)),
+      });
+    },
     changeNodeType: (id, kind) => {
       get().pushHistory();
       const defaults = NODE_META[kind].defaults();
       changed({
         nodes: get().nodes.map((n) =>
-          n.id === id ? { ...n, type: kind, data: { ...defaults, label: n.data.label, description: n.data.description, payload: n.data.payload } } : n,
+          n.id === id
+            ? {
+                ...n,
+                type: kind,
+                data: {
+                  ...defaults,
+                  label: n.data.label,
+                  description: n.data.description,
+                  payload: n.data.payload,
+                  ...(n.data.config?.color ? { config: { ...defaults.config, color: n.data.config.color } } : {}),
+                },
+              }
+            : n,
         ),
-        // Handles differ per type; drop edges that would now be invalid.
-        edges: get().edges.filter(
-          (e) => !((kind === 'start' && e.target === id) || (kind === 'end' && e.source === id)),
-        ),
+        // Handles differ per type: move lines onto the new handles, or drop them when there is none.
+        edges: retargetEdges(get().edges, id, kind),
       });
     },
     updateEdgeData: (id, patch) => {
@@ -300,6 +383,28 @@ export const useFlowStore = create<FlowState>((set, get) => {
         edges: edges.filter((e) => !edgeIds.has(e.id) && !nodeIds.has(e.source) && !nodeIds.has(e.target)),
       });
       set({ selectedNodeIds: [], selectedEdgeIds: [] });
+    },
+    alignSelection: (axis) => {
+      const selected = get().nodes.filter((n) => n.selected);
+      if (selected.length < 2) return;
+      const size = (n: FlowNode) => {
+        const fc = FLOWCHART_SIZE[n.type];
+        return { w: n.measured?.width ?? fc?.w ?? 232, h: n.measured?.height ?? fc?.h ?? 60 };
+      };
+      // Align to the first node in reading order: leftmost for a row, topmost for a column.
+      const anchor = [...selected].sort((a, b) => (axis === 'row' ? a.position.x - b.position.x : a.position.y - b.position.y))[0];
+      const centre = axis === 'row' ? anchor.position.y + size(anchor).h / 2 : anchor.position.x + size(anchor).w / 2;
+      get().pushHistory();
+      changed({
+        nodes: get().nodes.map((n) => {
+          if (!n.selected) return n;
+          const { w, h } = size(n);
+          return {
+            ...n,
+            position: axis === 'row' ? { x: n.position.x, y: Math.round(centre - h / 2) } : { x: Math.round(centre - w / 2), y: n.position.y },
+          };
+        }),
+      });
     },
     duplicateSelection: () => {
       const { nodes, edges } = get();
@@ -343,18 +448,50 @@ export const useFlowStore = create<FlowState>((set, get) => {
       get().deleteSelection();
       return count;
     },
-    paste: () => {
+    paste: (at) => {
       if (!clipboard?.nodes.length) return 0;
       const { nodes, edges } = get();
       get().pushHistory();
       pasteCount++;
-      const copy = cloneNodes(clipboard.nodes, clipboard.edges, 40 * pasteCount);
+      const copy = cloneNodes(clipboard.nodes, clipboard.edges, at ? 0 : 40 * pasteCount);
+      if (at) {
+        const minX = Math.min(...copy.nodes.map((n) => n.position.x));
+        const minY = Math.min(...copy.nodes.map((n) => n.position.y));
+        const dx = Math.round((at.x - minX) / 12) * 12;
+        const dy = Math.round((at.y - minY) / 12) * 12;
+        copy.nodes = copy.nodes.map((n) => ({ ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }));
+      }
       changed({
         nodes: [...nodes.map((n) => (n.selected ? { ...n, selected: false } : n)), ...copy.nodes],
         edges: [...edges.map((e) => (e.selected ? { ...e, selected: false } : e)), ...copy.edges],
       });
       set({ selectedNodeIds: copy.nodes.map((c) => c.id), selectedEdgeIds: [] });
       return copy.nodes.length;
+    },
+    reverseEdge: (id) => {
+      const { nodes, edges } = get();
+      const edge = edges.find((e) => e.id === id);
+      if (!edge) return;
+      const from = nodes.find((n) => n.id === edge.target);
+      const to = nodes.find((n) => n.id === edge.source);
+      if (!from || !to || to.type === 'start' || from.type === 'end') return;
+      get().pushHistory();
+      // The new source leaves from its bottom; the new target is entered on the side that reads best.
+      const sourceHandle = from.type === 'decision' || from.type === 'fc-decision' ? 'true' : 'out';
+      changed({
+        edges: edges.map((e) =>
+          e.id === id
+            ? {
+                ...e,
+                source: from.id,
+                target: to.id,
+                sourceHandle,
+                targetHandle: pickTargetHandle(from, sourceHandle, to),
+                data: { ...e.data, ...edgeDataFor(from.type, sourceHandle), label: e.data?.label },
+              }
+            : e,
+        ),
+      });
     },
     deleteAll: () => {
       const count = get().nodes.length;

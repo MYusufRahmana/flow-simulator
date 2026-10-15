@@ -5,24 +5,29 @@ import {
   MiniMap,
   ReactFlow,
   useReactFlow,
+  ViewportPortal,
   type Connection,
   type Edge,
   type FinalConnectionState,
   type OnSelectionChangeParams,
 } from '@xyflow/react';
-import { useCallback, useEffect, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useFlowStore } from '../../stores/flowStore';
 import { useSimulationStore } from '../../stores/simulationStore';
 import { useUiStore } from '../../stores/uiStore';
 import type { FlowEdge as FlowEdgeType, FlowNode, NodeKind } from '../../types/flow';
 import FlowEdge, { EdgeMarkers } from '../edges/FlowEdge';
 import ConnectMenu, { type ConnectMenuState } from './ConnectMenu';
+import ContextMenu, { type ContextMenuState } from './ContextMenu';
 import FlowNodeCard from '../nodes/FlowNodeCard';
-import { NODE_KINDS, NODE_META } from '../nodes/registry';
+import FlowchartNode from '../nodes/FlowchartNode';
+import { categoryOf, halfWidthOf, isFlowchartKind, NODE_KINDS, NODE_META } from '../nodes/registry';
 
 export const DND_TYPE = 'application/x-flow-node';
 
-const nodeTypes = Object.fromEntries(NODE_KINDS.map((k) => [k, FlowNodeCard]));
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+const nodeTypes = Object.fromEntries(NODE_KINDS.map((k) => [k, isFlowchartKind(k) ? FlowchartNode : FlowNodeCard]));
 const edgeTypes = { flow: FlowEdge };
 
 export default function FlowCanvas() {
@@ -38,6 +43,37 @@ export default function FlowCanvas() {
   const minimap = useUiStore((s) => s.minimap);
   const { screenToFlowPosition, setCenter, getNode, getZoom } = useReactFlow<FlowNode, FlowEdgeType>();
   const [connectMenu, setConnectMenu] = useState<ConnectMenuState | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  // Right-click menu. Disabled while simulating, since the canvas is locked then.
+  const openContextMenu = useCallback(
+    (e: MouseEvent | ReactMouseEvent, target: DistributiveOmit<ContextMenuState, 'x' | 'y' | 'flowX' | 'flowY'>) => {
+      e.preventDefault();
+      if (useSimulationStore.getState().active) return;
+      const p = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      setConnectMenu(null);
+      setContextMenu({ ...target, x: e.clientX, y: e.clientY, flowX: p.x, flowY: p.y } as ContextMenuState);
+    },
+    [screenToFlowPosition],
+  );
+  const onNodeContextMenu = useCallback(
+    (e: ReactMouseEvent, node: FlowNode) => {
+      const flow = useFlowStore.getState();
+      // Right-clicking inside a multi-selection acts on the whole selection.
+      if (node.selected && flow.selectedNodeIds.length > 1) return openContextMenu(e, { target: 'selection' });
+      flow.selectNode(node.id);
+      openContextMenu(e, { target: 'node', id: node.id });
+    },
+    [openContextMenu],
+  );
+  const onEdgeContextMenu = useCallback(
+    (e: ReactMouseEvent, edge: FlowEdgeType) => {
+      useFlowStore.getState().selectEdge(edge.id);
+      openContextMenu(e, { target: 'edge', id: edge.id });
+    },
+    [openContextMenu],
+  );
 
   // Dropping a connection on empty canvas offers to create the next node right there.
   const onConnectEnd = useCallback(
@@ -60,13 +96,14 @@ export default function FlowCanvas() {
   const onPickConnected = useCallback(
     (kind: NodeKind) => {
       if (!connectMenu) return;
-      const halfWidth = kind === 'start' || kind === 'end' ? 80 : 116;
+      const halfWidth = halfWidthOf(kind);
       // Line ending at the top centre of the new node, snapped to the grid.
       const position = {
         x: Math.round((connectMenu.flowX - halfWidth) / 12) * 12,
         y: Math.round(connectMenu.flowY / 12) * 12,
       };
-      useFlowStore.getState().addConnectedNode(kind, position, connectMenu.source, connectMenu.sourceHandle);
+      const id = useFlowStore.getState().addConnectedNode(kind, position, connectMenu.source, connectMenu.sourceHandle);
+      if (isFlowchartKind(kind)) useUiStore.getState().startEditing(id);
       setConnectMenu(null);
     },
     [connectMenu],
@@ -89,6 +126,8 @@ export default function FlowCanvas() {
     const target = nodes.find((n) => n.id === c.target);
     if (!source || !target) return false;
     if (target.type === 'start' || source.type === 'end') return false;
+    // Simulation nodes and flowchart shapes are separate worlds.
+    if (categoryOf(source.type) !== categoryOf(target.type)) return false;
     return !edges.some(
       (e) => e.source === c.source && e.target === c.target && (e.sourceHandle ?? null) === (c.sourceHandle ?? null),
     );
@@ -107,8 +146,9 @@ export default function FlowCanvas() {
       if (!kind || !NODE_META[kind]) return;
       e.preventDefault();
       const p = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      const halfWidth = kind === 'start' || kind === 'end' ? 80 : 116;
-      useFlowStore.getState().addNode(kind, { x: Math.round((p.x - halfWidth) / 12) * 12, y: Math.round((p.y - 28) / 12) * 12 });
+      const halfWidth = halfWidthOf(kind);
+      const id = useFlowStore.getState().addNode(kind, { x: Math.round((p.x - halfWidth) / 12) * 12, y: Math.round((p.y - 28) / 12) * 12 });
+      if (isFlowchartKind(kind)) useUiStore.getState().startEditing(id);
     },
     [screenToFlowPosition],
   );
@@ -133,6 +173,10 @@ export default function FlowCanvas() {
       onConnectEnd={onConnectEnd}
       connectionRadius={36}
       onSelectionChange={onSelectionChange}
+      onNodeContextMenu={onNodeContextMenu}
+      onEdgeContextMenu={onEdgeContextMenu}
+      onSelectionContextMenu={(e) => openContextMenu(e, { target: 'selection' })}
+      onPaneContextMenu={(e) => openContextMenu(e, { target: 'pane' })}
       onNodeDragStart={() => useFlowStore.getState().pushHistory()}
       onMoveEnd={(_, vp) => useFlowStore.getState().setViewport(vp)}
       isValidConnection={isValidConnection}
@@ -155,7 +199,10 @@ export default function FlowCanvas() {
       connectionLineStyle={{ stroke: '#2f5bff', strokeWidth: 1.5, strokeDasharray: '5 4' }}
       proOptions={{ hideAttribution: true }}
     >
-      <EdgeMarkers />
+      {/* Inside the viewport so image exports (which clone only the viewport) keep the arrowheads. */}
+      <ViewportPortal>
+        <EdgeMarkers />
+      </ViewportPortal>
       <Background id="minor" variant={BackgroundVariant.Lines} gap={24} color="var(--color-grid)" lineWidth={1} />
       <Background
         id="major"
@@ -165,6 +212,7 @@ export default function FlowCanvas() {
         lineWidth={1}
         bgColor="transparent"
       />
+      {contextMenu && <ContextMenu menu={contextMenu} onClose={closeContextMenu} />}
       {connectMenu && <ConnectMenu menu={connectMenu} onPick={onPickConnected} onClose={() => setConnectMenu(null)} />}
       {minimap && (
         <MiniMap

@@ -13,7 +13,22 @@ export type NodeKind =
   | 'notification'
   | 'output'
   | 'error'
-  | 'end';
+  | 'end'
+  // Flowchart shapes: drawing only, never simulated.
+  | 'fc-terminal'
+  | 'fc-actor'
+  | 'fc-process'
+  | 'fc-decision'
+  | 'fc-data'
+  | 'fc-document'
+  | 'fc-subprocess'
+  | 'fc-database'
+  | 'fc-connector'
+  | 'fc-note'
+  | 'fc-text';
+
+export type TextSize = 'sm' | 'md' | 'lg' | 'xl';
+export type NodeCategory = 'simulation' | 'flowchart';
 
 export type Branch = 'TRUE' | 'FALSE' | 'SUCCESS' | 'FAILED';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -47,6 +62,12 @@ export type NodeConfig = {
   channel?: string;
   // error
   code?: string;
+  // flowchart shapes
+  color?: string;
+  // text
+  textSize?: TextSize;
+  textAlign?: 'left' | 'center' | 'right';
+  bold?: boolean;
 };
 
 export type FlowNodeData = {

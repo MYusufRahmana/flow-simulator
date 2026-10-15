@@ -52,3 +52,54 @@ describe('select all / copy / paste / delete all', () => {
     expect(flow().nodes).toHaveLength(count);
   });
 });
+
+describe('change node type keeps lines on real handles', () => {
+  beforeEach(() => flow().load(TEMPLATES[0].build()));
+
+  it('decision -> process moves TRUE onto the main path and FALSE onto the failure path', () => {
+    flow().changeNodeType('valid', 'process');
+    const out = flow().edges.filter((e) => e.source === 'valid');
+    expect(out.map((e) => e.sourceHandle).sort()).toEqual(['fail', 'out']);
+    expect(out.find((e) => e.sourceHandle === 'out')?.data?.branch).toBeUndefined();
+    expect(out.find((e) => e.sourceHandle === 'fail')?.data?.branch).toBe('FAILED');
+  });
+
+  it('end -> process moves a right-side entry back to the top', () => {
+    flow().changeNodeType('end', 'process');
+    const into = flow().edges.filter((e) => e.target === 'end');
+    expect(into.every((e) => e.targetHandle === 'top' || e.targetHandle === 'left')).toBe(true);
+  });
+});
+
+describe('flowchart shapes', () => {
+  beforeEach(() => flow().load(TEMPLATES.find((t) => t.id === 'flowchart-cuti')!.build()));
+
+  it('decision -> process -> decision keeps both branches with Ya / Tidak labels', () => {
+    flow().changeNodeType('ok', 'fc-process');
+    expect(flow().edges.filter((e) => e.source === 'ok').map((e) => e.sourceHandle).sort()).toEqual(['out', 'out-right']);
+    flow().changeNodeType('ok', 'fc-decision');
+    const out = flow().edges.filter((e) => e.source === 'ok');
+    expect(out.map((e) => e.data?.label).sort()).toEqual(['Tidak', 'Ya']);
+  });
+
+  it('turning a connected shape into Text drops its lines', () => {
+    flow().changeNodeType('cek', 'fc-text');
+    expect(flow().edges.some((e) => e.source === 'cek' || e.target === 'cek')).toBe(false);
+  });
+
+  it('reverses an edge', () => {
+    const edge = flow().edges.find((e) => e.source === 'form' && e.target === 'cek')!;
+    flow().reverseEdge(edge.id);
+    const reversed = flow().edges.find((e) => e.id === edge.id)!;
+    expect([reversed.source, reversed.target]).toEqual(['cek', 'form']);
+  });
+
+  it('paste at a point puts the copy there (within half a grid cell)', () => {
+    flow().selectNode('mulai');
+    flow().copySelection();
+    flow().paste({ x: 1000, y: 500 });
+    const pasted = flow().nodes.find((n) => n.selected)!;
+    expect(Math.abs(pasted.position.x - 1000)).toBeLessThanOrEqual(6);
+    expect(Math.abs(pasted.position.y - 500)).toBeLessThanOrEqual(6);
+  });
+});

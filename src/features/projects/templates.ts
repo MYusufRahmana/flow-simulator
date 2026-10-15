@@ -1,4 +1,4 @@
-import { NODE_META } from '../../components/nodes/registry';
+import { halfWidthOf, NODE_META } from '../../components/nodes/registry';
 import type { Branch, FlowEdge, FlowNode, FlowNodeData, FlowProject, NodeKind } from '../../types/flow';
 import { createEmptyProject } from './io';
 
@@ -8,7 +8,7 @@ type EdgeSpec = [source: string, target: string, branch?: Branch, label?: string
 
 const COL = 300;
 const ROW = 120;
-const TERMINAL_OFFSET = (232 - 160) / 2;
+const CARD_WIDTH = 232;
 
 export type Template = {
   id: string;
@@ -34,14 +34,14 @@ function build(name: string, description: string, nodeSpecs: NodeSpec[], edgeSpe
     return {
       id,
       type: kind,
-      // Start/End pills are narrower than cards; centre them on the column.
-      position: { x: col * COL + (kind === 'start' || kind === 'end' ? TERMINAL_OFFSET : 0), y: row * ROW },
+      // Pills and flowchart shapes are narrower than cards; centre them on the column.
+      position: { x: col * COL + (CARD_WIDTH / 2 - halfWidthOf(kind)), y: row * ROW },
       data: { ...defaults, ...data, config: { ...defaults.config, ...data?.config } },
     };
   });
   project.edges = edgeSpecs.map(([source, target, branch, label], i): FlowEdge => {
     const sideways = branch === 'FALSE' || branch === 'FAILED';
-    const fromDecision = kindOf.get(source) === 'decision';
+    const fromDecision = kindOf.get(source) === 'decision' || kindOf.get(source) === 'fc-decision';
     return {
       id: `e${i + 1}`,
       type: 'flow',
@@ -260,6 +260,38 @@ export const TEMPLATES: Template[] = [
           ['hist', 'ok'],
           ['ok', 'end'],
           ['na', 'end', undefined, 'right'],
+        ],
+      ),
+  },
+  {
+    id: 'flowchart-cuti',
+    name: 'Flowchart Pengajuan Cuti',
+    description: 'Flowchart presentasi (tanpa simulasi) — garis beranimasi otomatis.',
+    kinds: ['fc-terminal', 'fc-data', 'fc-process', 'fc-decision', 'fc-database', 'fc-document'],
+    build: () =>
+      build(
+        'Flowchart Pengajuan Cuti',
+        'Alur persetujuan cuti karyawan.',
+        [
+          ['mulai', 'fc-terminal', 0, 0, { label: 'Mulai' }],
+          ['form', 'fc-data', 0, 1, { label: 'Karyawan isi form cuti' }],
+          ['cek', 'fc-process', 0, 2, { label: 'Atasan review pengajuan' }],
+          ['ok', 'fc-decision', 0, 3, { label: 'Disetujui?' }],
+          ['simpan', 'fc-database', 0, 4.4, { label: 'Simpan ke HRIS' }],
+          ['surat', 'fc-document', 0, 5.6, { label: 'Surat cuti terbit' }],
+          ['revisi', 'fc-process', 1, 2, { label: 'Karyawan revisi pengajuan' }],
+          ['note', 'fc-note', 1, 0.6, { label: 'Pengajuan minimal H-7 sebelum tanggal cuti.' }],
+          ['selesai', 'fc-terminal', 0, 6.8, { label: 'Selesai' }],
+        ],
+        [
+          ['mulai', 'form'],
+          ['form', 'cek'],
+          ['cek', 'ok'],
+          ['ok', 'simpan', 'TRUE', 'Ya'],
+          ['ok', 'revisi', 'FALSE', 'Tidak'],
+          ['revisi', 'cek', undefined, 'right'],
+          ['simpan', 'surat'],
+          ['surat', 'selesai'],
         ],
       ),
   },

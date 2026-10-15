@@ -11,8 +11,13 @@ export function copyWithToast() {
   else showToast(`${count} komponen ${hadSelection ? 'terpilih' : '(semua)'} dicopy. Tekan Ctrl+V untuk paste.`);
 }
 
-export function pasteWithToast() {
-  const count = useFlowStore.getState().paste();
+export function cutWithToast() {
+  const count = useFlowStore.getState().cutSelection();
+  if (count) useUiStore.getState().showToast(`${count} komponen di-cut. Tekan Ctrl+V untuk paste.`);
+}
+
+export function pasteWithToast(at?: { x: number; y: number }) {
+  const count = useFlowStore.getState().paste(at);
   const { showToast } = useUiStore.getState();
   if (!count) showToast('Clipboard kosong. Copy komponen dulu.', 'error');
   else showToast(`${count} komponen di-paste`);

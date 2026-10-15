@@ -1,13 +1,15 @@
+import { FLOWCHART_SIZE } from '../../components/nodes/registry';
 import type { FlowNode } from '../../types/flow';
 
 /** Handle id used by the whole-node drop zone while a connection is being dragged. */
 export const AUTO_HANDLE = 'auto';
 
-const SIDE_HANDLES = new Set(['false', 'fail']);
+const SIDE_HANDLES = new Set(['false', 'fail', 'out-right']);
 
 function box(n: Pick<FlowNode, 'position' | 'measured' | 'type'>) {
-  const w = n.measured?.width ?? (n.type === 'start' || n.type === 'end' ? 160 : 232);
-  const h = n.measured?.height ?? 60;
+  const fc = n.type ? FLOWCHART_SIZE[n.type] : undefined;
+  const w = n.measured?.width ?? fc?.w ?? (n.type === 'start' || n.type === 'end' ? 160 : 232);
+  const h = n.measured?.height ?? fc?.h ?? 60;
   return { x: n.position.x, y: n.position.y, w, h, cx: n.position.x + w / 2, cy: n.position.y + h / 2 };
 }
 

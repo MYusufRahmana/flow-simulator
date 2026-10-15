@@ -62,6 +62,24 @@ body {
   color: #3a3b42;
   transition: background-color 0.12s;
 }
+.icon-btn.icon-btn-text {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* Narrow screens: icons only, so the top bar still fits on one line next to the Run button. */
+@media (max-width: 1359px) {
+  .icon-btn.icon-btn-text {
+    width: 36px;
+    padding: 0;
+  }
+  .icon-btn.icon-btn-text > span {
+    display: none;
+  }
+}
 .icon-btn:hover:not(:disabled) {
   background: #f1f2f4;
 }
@@ -185,6 +203,22 @@ body {
   stroke-dasharray: 6 4;
   animation: dash-flow 0.6s linear infinite;
 }
+/* Flowchart connections: always flowing, no simulation required. */
+.edge-flowing {
+  stroke-dasharray: 6 4;
+  animation: dash-flow 0.9s linear infinite;
+}
+
+/* While exporting an image: static, print-friendly lines and no editing chrome. */
+.exporting .flow-dot,
+.exporting .react-flow__handle {
+  display: none;
+}
+.exporting .edge-flowing,
+.exporting .edge-active {
+  stroke-dasharray: none;
+  animation: none;
+}
 
 @keyframes spin {
   to {
@@ -219,6 +253,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .edge-active,
+  .edge-flowing,
   .spin,
   .node-processing,
   .fade-in {

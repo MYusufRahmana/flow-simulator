@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Branch, FlowEdge, FlowNode, NodeKind } from '../../types/flow';
+import { isFlowchartKind } from '../../components/nodes/registry';
 import { TEMPLATES } from '../projects/templates';
 import { parseProjectFile, toFile } from '../projects/io';
 import { runNode, simulate, type Graph } from './engine';
@@ -87,8 +88,9 @@ describe('simulation engine', () => {
     expect(runNode(g, { nodeId: 'api', payload: {} }).payload).toEqual({ response: { id: 1 } });
   });
 
-  it('every bundled template is valid and reaches End', () => {
-    for (const t of TEMPLATES) {
+  it('every bundled simulation template is valid and reaches End', () => {
+    // Flowchart templates are drawings for presenting, not simulations.
+    for (const t of TEMPLATES.filter((t) => !t.kinds.some(isFlowchartKind))) {
       const p = t.build();
       const errors = validateFlow(p).filter((i) => i.level === 'error');
       expect(errors, t.id).toEqual([]);

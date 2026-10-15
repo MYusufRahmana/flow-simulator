@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
+import { useFlowStore } from '../../stores/flowStore';
 import type { NodeKind } from '../../types/flow';
-import { NODE_GROUPS, NODE_META } from '../nodes/registry';
+import { categoryOf, kindsInCategory, NODE_META } from '../nodes/registry';
 
 export type ConnectMenuState = {
   /** Screen position where the connection was dropped. */
@@ -13,7 +14,6 @@ export type ConnectMenuState = {
   sourceHandle: string | null;
 };
 
-const KINDS = NODE_GROUPS.flatMap((g) => g.kinds).filter((k) => k !== 'start');
 const WIDTH = 248;
 const MAX_HEIGHT = 360;
 
@@ -27,6 +27,10 @@ export default function ConnectMenu({
   onPick: (kind: NodeKind) => void;
   onClose: () => void;
 }) {
+  // Offer only nodes from the same category as the node the line was dragged from.
+  const sourceKind = useFlowStore((s) => s.nodes.find((n) => n.id === menu.source)?.type);
+  const kinds = kindsInCategory(categoryOf(sourceKind)).filter((k) => k !== 'start' && k !== 'fc-text');
+
   // Capture phase so Escape closes the menu before the editor's own shortcuts see it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -51,7 +55,7 @@ export default function ConnectMenu({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-wider text-gray-400 uppercase">Tambah node &amp; sambungkan</div>
-        {KINDS.map((kind, i) => {
+        {kinds.map((kind, i) => {
           const meta = NODE_META[kind];
           const Icon = meta.icon;
           return (

@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import FlowCanvas from '../components/flow/FlowCanvas';
 import { EditorTopbar, RunControls } from '../components/panels/EditorTopbar';
-import { copyWithToast, pasteWithToast } from '../features/editor/clipboard';
+import { copyWithToast, cutWithToast, pasteWithToast } from '../features/editor/clipboard';
 import NodePalette from '../components/panels/NodePalette';
 import PropertiesPanel from '../components/panels/PropertiesPanel';
+import ExportDialog from '../components/panels/ExportDialog';
 import ShortcutsDialog from '../components/panels/ShortcutsDialog';
 import ZoomControls from '../components/panels/ZoomControls';
 import IssuesDialog from '../components/simulation/IssuesDialog';
@@ -17,6 +18,7 @@ import { useFlowStore } from '../stores/flowStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useSimulationStore } from '../stores/simulationStore';
 import { useUiStore } from '../stores/uiStore';
+import { isFlowchartKind } from '../components/nodes/registry';
 import { isTypingTarget } from '../utils/misc';
 
 function useEditorShortcuts(saveNow: () => Promise<void>) {
@@ -34,7 +36,14 @@ function useEditorShortcuts(saveNow: () => Promise<void>) {
         void saveNow();
         return;
       }
+      if (mod && key === 'e') {
+        e.preventDefault();
+        ui.setExportOpen(true);
+        return;
+      }
       if (isTypingTarget(e.target)) return;
+      // Canvas shortcuts must not act behind an open dialog.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
 
       if (mod && key === 'enter' && !sim.active) {
         e.preventDefault();
@@ -51,6 +60,21 @@ function useEditorShortcuts(saveNow: () => Promise<void>) {
         void fitView({ padding: 0.2, duration: 300, maxZoom: 1 });
         return;
       }
+      // A single selected flowchart shape: Enter / F2 edits its text, typing replaces it.
+      const only = !sim.active && flow.selectedNodeIds.length === 1 && !flow.selectedEdgeIds.length
+        ? flow.nodes.find((n) => n.id === flow.selectedNodeIds[0])
+        : undefined;
+      if (only && isFlowchartKind(only.type) && !mod && !e.altKey) {
+        if (e.key === 'Enter' || e.key === 'F2') {
+          e.preventDefault();
+          return ui.startEditing(only.id);
+        }
+        if (e.key.length === 1) {
+          e.preventDefault();
+          return ui.startEditing(only.id, e.key);
+        }
+      }
+
       if (!mod && key === 'p') return ui.setPresentation(!ui.presentation);
       if (e.key === '?') return ui.setShortcutsOpen(true);
 
@@ -81,8 +105,7 @@ function useEditorShortcuts(saveNow: () => Promise<void>) {
         copyWithToast();
       } else if (mod && key === 'x') {
         e.preventDefault();
-        const count = flow.cutSelection();
-        if (count) ui.showToast(`${count} komponen di-cut. Tekan Ctrl+V untuk paste.`);
+        cutWithToast();
       } else if (mod && key === 'v') {
         e.preventDefault();
         pasteWithToast();
@@ -150,6 +173,7 @@ function Editor() {
 
       <IssuesDialog />
       <ShortcutsDialog />
+      <ExportDialog />
     </div>
   );
 }

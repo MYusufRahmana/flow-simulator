@@ -1,17 +1,68 @@
-import { ArrowRight, Copy, Trash2, X } from 'lucide-react';
+import {
+  AlignCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignLeft,
+  AlignRight,
+  ArrowRight,
+  Bold,
+  Copy,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useFlowStore } from '../../stores/flowStore';
 import { useSimulationStore } from '../../stores/simulationStore';
 import type { Branch, DbAction, FlowEdge, FlowNode, HttpMethod, NodeKind } from '../../types/flow';
 import { parsePayload } from '../../utils/misc';
 import { Field, IconButton, inputClass, Segmented, Toggle } from '../common/ui';
-import { NODE_KINDS, NODE_META } from '../nodes/registry';
+import { isFlowchartKind, kindsInCategory, NODE_META } from '../nodes/registry';
 import { copyWithToast } from '../../features/editor/clipboard';
 import { edgeBranch } from '../../features/simulation/engine';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const DB_ACTIONS: DbAction[] = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRANSACTION'];
 const BRANCHES: (Branch | '')[] = ['', 'TRUE', 'FALSE', 'SUCCESS', 'FAILED'];
+const SWATCHES = ['#1c1d22', '#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0d9488', '#db2777', '#475569'];
+
+function ColorField({
+  label = 'Color',
+  value,
+  fallback,
+  onChange,
+}: {
+  label?: string;
+  value?: string;
+  fallback: string;
+  onChange: (v: string | undefined) => void;
+}) {
+  const current = value || fallback;
+  return (
+    <div>
+      <div className="mb-1 text-[11px] font-medium text-gray-500">{label}</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {SWATCHES.map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Color ${c}`}
+            aria-pressed={current === c}
+            onClick={() => onChange(c === fallback ? undefined : c)}
+            className={`h-6 w-6 rounded-full border-2 transition ${current === c ? 'border-gray-900' : 'border-white shadow-[0_0_0_1px_rgb(0_0_0/0.1)]'}`}
+            style={{ background: c }}
+          />
+        ))}
+        <input
+          type="color"
+          aria-label="Custom color"
+          value={current}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-6 w-8 cursor-pointer rounded border border-black/10 bg-white p-0.5"
+        />
+      </div>
+    </div>
+  );
+}
 
 function JsonField({ label, value, onChange, placeholder }: { label: string; value?: string; onChange: (v: string) => void; placeholder?: string }) {
   const parsed = parsePayload(value);
@@ -77,6 +128,7 @@ function NodeProperties({ node }: { node: FlowNode }) {
   const meta = NODE_META[node.type];
   const Icon = meta.icon;
   const c = node.data.config ?? {};
+  const flowchart = meta.category === 'flowchart';
   const set = (patch: Partial<FlowNode['data']>) => updateData(node.id, patch);
   const cfg = (patch: NonNullable<FlowNode['data']['config']>) => updateConfig(node.id, patch);
 
@@ -110,43 +162,100 @@ function NodeProperties({ node }: { node: FlowNode }) {
         </>
       }
     >
-      <Field label="Name">
-        <input className={inputClass} value={node.data.label} onChange={(e) => set({ label: e.target.value })} autoFocus={!node.data.label} />
+      <Field label={flowchart ? 'Text' : 'Name'}>
+        {flowchart ? (
+          <textarea
+            className={`${inputClass} min-h-[56px] resize-y`}
+            value={node.data.label}
+            onChange={(e) => set({ label: e.target.value })}
+            autoFocus={!node.data.label}
+          />
+        ) : (
+          <input className={inputClass} value={node.data.label} onChange={(e) => set({ label: e.target.value })} autoFocus={!node.data.label} />
+        )}
       </Field>
-      <div className="grid grid-cols-[1fr_96px] gap-2">
+      <div className={flowchart ? '' : 'grid grid-cols-[1fr_96px] gap-2'}>
         <Field label="Type">
           <select className={inputClass} value={node.type} onChange={(e) => changeType(node.id, e.target.value as NodeKind)}>
-            {NODE_KINDS.map((k) => (
+            {kindsInCategory(meta.category).map((k) => (
               <option key={k} value={k}>
                 {NODE_META[k].label}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Duration">
-          <div className="relative">
-            <input
-              type="number"
-              min={0}
-              step={100}
-              className={`${inputClass} pr-8`}
-              value={node.data.duration ?? 500}
-              onChange={(e) => set({ duration: Math.max(0, Number(e.target.value) || 0) })}
-            />
-            <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[11px] text-gray-400">ms</span>
-          </div>
-        </Field>
+        {!flowchart && (
+          <Field label="Duration">
+            <div className="relative">
+              <input
+                type="number"
+                min={0}
+                step={100}
+                className={`${inputClass} pr-8`}
+                value={node.data.duration ?? 500}
+                onChange={(e) => set({ duration: Math.max(0, Number(e.target.value) || 0) })}
+              />
+              <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[11px] text-gray-400">ms</span>
+            </div>
+          </Field>
+        )}
       </div>
-      <Field label="Description">
-        <textarea
-          className={`${inputClass} min-h-[56px] resize-y`}
-          value={node.data.description ?? ''}
-          placeholder="What happens at this step?"
-          onChange={(e) => set({ description: e.target.value })}
-        />
-      </Field>
+      {node.type === 'fc-text' ? (
+        <>
+          <div>
+            <div className="mb-1 text-[11px] font-medium text-gray-500">Size</div>
+            <Segmented
+              label="Text size"
+              value={c.textSize ?? 'md'}
+              onChange={(textSize) => cfg({ textSize })}
+              options={[
+                { value: 'sm', label: 'S', title: 'Small' },
+                { value: 'md', label: 'M', title: 'Normal' },
+                { value: 'lg', label: 'L', title: 'Large' },
+                { value: 'xl', label: 'XL', title: 'Title' },
+              ]}
+            />
+          </div>
+          <div className="flex items-end justify-between gap-2">
+            <div>
+              <div className="mb-1 text-[11px] font-medium text-gray-500">Align</div>
+              <Segmented
+                label="Text align"
+                value={c.textAlign ?? 'left'}
+                onChange={(textAlign) => cfg({ textAlign })}
+                options={[
+                  { value: 'left', label: <AlignLeft size={13} />, title: 'Left' },
+                  { value: 'center', label: <AlignCenter size={13} />, title: 'Center' },
+                  { value: 'right', label: <AlignRight size={13} />, title: 'Right' },
+                ]}
+              />
+            </div>
+            <IconButton label="Bold" pressed={!!c.bold} onClick={() => cfg({ bold: !c.bold })} className="!h-8 !w-8">
+              <Bold size={14} />
+            </IconButton>
+          </div>
+        </>
+      ) : (
+        <Field label="Description">
+          <textarea
+            className={`${inputClass} min-h-[56px] resize-y`}
+            value={node.data.description ?? ''}
+            placeholder={flowchart ? 'Optional — shown under the text' : 'What happens at this step?'}
+            onChange={(e) => set({ description: e.target.value })}
+          />
+        </Field>
+      )}
 
-      {node.type !== 'start' && node.type !== 'end' && <div className="h-px bg-black/6" />}
+      {flowchart && (
+        <ColorField
+          label={node.type === 'fc-text' ? 'Text color' : 'Color'}
+          value={c.color}
+          fallback={meta.color}
+          onChange={(color) => cfg({ color })}
+        />
+      )}
+
+      {node.type !== 'start' && node.type !== 'end' && !flowchart && <div className="h-px bg-black/6" />}
 
       {node.type === 'input' && (
         <Field label="Fields">
@@ -255,7 +364,7 @@ function NodeProperties({ node }: { node: FlowNode }) {
         </Field>
       )}
 
-      {node.type !== 'end' && (
+      {node.type !== 'end' && !flowchart && (
         <JsonField
           label={node.type === 'start' ? 'Initial payload' : 'Payload (merged into data)'}
           value={node.data.payload}
@@ -278,6 +387,7 @@ function EdgeProperties({ edge }: { edge: FlowEdge }) {
   const nodes = useFlowStore((s) => s.nodes);
   const from = nodes.find((n) => n.id === edge.source)?.data.label;
   const to = nodes.find((n) => n.id === edge.target)?.data.label;
+  const diagram = isFlowchartKind(nodes.find((n) => n.id === edge.source)?.type);
   const set = (patch: Partial<NonNullable<FlowEdge['data']>>) => update(edge.id, patch);
 
   return (
@@ -322,7 +432,11 @@ function EdgeProperties({ edge }: { edge: FlowEdge }) {
           onChange={(e) => set({ description: e.target.value })}
         />
       </Field>
-      <Toggle label="Animate token" checked={edge.data?.animation !== false} onChange={(animation) => set({ animation })} />
+      <Toggle
+        label={diagram ? 'Animate line' : 'Animate token'}
+        checked={edge.data?.animation !== false}
+        onChange={(animation) => set({ animation })}
+      />
     </PanelShell>
   );
 }
@@ -413,6 +527,27 @@ export default function PropertiesPanel() {
             Delete
           </button>
         </div>
+        {nodeIds.length > 1 && (
+          <div>
+            <div className="mb-1 text-[11px] font-medium text-gray-500">Align</div>
+            <div className="flex gap-2">
+              <button
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-black/10 py-1.5 text-[13px] font-medium hover:bg-gray-50"
+                title="Make the centres level so horizontal lines run straight"
+                onClick={() => useFlowStore.getState().alignSelection('row')}
+              >
+                <AlignCenterHorizontal size={14} /> Row
+              </button>
+              <button
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-black/10 py-1.5 text-[13px] font-medium hover:bg-gray-50"
+                title="Stack the centres so vertical lines run straight"
+                onClick={() => useFlowStore.getState().alignSelection('column')}
+              >
+                <AlignCenterVertical size={14} /> Column
+              </button>
+            </div>
+          </div>
+        )}
       </PanelShell>
     );
   }

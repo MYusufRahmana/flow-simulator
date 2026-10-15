@@ -1,5 +1,6 @@
-import { EdgeLabelRenderer, getSmoothStepPath, type EdgeProps } from '@xyflow/react';
+import { EdgeLabelRenderer, getSmoothStepPath, Position, useStore, type EdgeProps } from '@xyflow/react';
 import { memo, useRef } from 'react';
+import { isFlowchartKind } from '../nodes/registry';
 import { useSimulationStore } from '../../stores/simulationStore';
 import type { Branch, FlowEdge as FlowEdgeType } from '../../types/flow';
 import { prefersReducedMotion } from '../../utils/misc';
@@ -12,6 +13,7 @@ const STROKE = {
   SUCCESS: '#4c6ef5',
   FAILED: '#e03131',
   SKIPPED: '#cfd2d8',
+  FLOW: '#7b93f7',
 } as const;
 
 const BRANCH_PILL: Record<Branch, string> = {
@@ -45,6 +47,9 @@ export function EdgeMarkers() {
   );
 }
 
+const STRAIGHTEN_PX = 10;
+const isHorizontal = (p: Position) => p === Position.Left || p === Position.Right;
+
 function payloadPreview(payload: Record<string, unknown> | undefined) {
   if (!payload) return null;
   const keys = Object.keys(payload);
@@ -54,17 +59,24 @@ function payloadPreview(payload: Record<string, unknown> | undefined) {
 }
 
 function FlowEdge(props: EdgeProps<FlowEdgeType>) {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected } = props;
+  const { id, source, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected } = props;
   const pathRef = useRef<SVGPathElement>(null);
+  // Flowchart connections are for presenting: they animate continuously, no simulation needed.
+  const diagram = useStore((s) => isFlowchartKind(s.nodeLookup.get(source)?.type));
   const status = useSimulationStore((s) => s.edgeStatus[id] ?? 'IDLE');
   const progress = useSimulationStore((s) => (s.edgeStatus[id] === 'ACTIVE' ? s.progress : -1));
   const payload = useSimulationStore((s) => s.edgePayload[id]);
 
+  // Ends that are almost level (or almost in one column) get a straight line instead of a tiny jog.
+  const horizontal = isHorizontal(sourcePosition) && isHorizontal(targetPosition);
+  const vertical = !isHorizontal(sourcePosition) && !isHorizontal(targetPosition);
+  const tx = vertical && Math.abs(targetX - sourceX) <= STRAIGHTEN_PX ? sourceX : targetX;
+  const ty = horizontal && Math.abs(targetY - sourceY) <= STRAIGHTEN_PX ? sourceY : targetY;
   const [path, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
-    targetX,
-    targetY,
+    targetX: tx,
+    targetY: ty,
     sourcePosition,
     targetPosition,
     borderRadius: 10,
@@ -74,8 +86,11 @@ function FlowEdge(props: EdgeProps<FlowEdgeType>) {
   const branch = edgeBranch({ data, sourceHandle: props.sourceHandleId });
   const label = data?.label ?? branch?.toLowerCase();
   const animated = data?.animation !== false;
-  const key = status !== 'IDLE' ? status : selected ? 'SELECTED' : 'IDLE';
+  const flowing = diagram && animated;
+  const key = status !== 'IDLE' ? status : selected ? 'SELECTED' : diagram ? 'FLOW' : 'IDLE';
   const active = status === 'ACTIVE';
+  // Keep the dot at a steady speed (~120px/s) whatever the edge length.
+  const loopSeconds = Math.max(1.2, (Math.abs(targetX - sourceX) + Math.abs(targetY - sourceY)) / 120);
 
   let token: { x: number; y: number } | null = null;
   if (active && animated && pathRef.current) {
@@ -93,13 +108,23 @@ function FlowEdge(props: EdgeProps<FlowEdgeType>) {
         ref={pathRef}
         d={path}
         fill="none"
-        className={`flow-edge-path ${active && animated ? 'edge-active' : ''}`}
+        className={`flow-edge-path ${active && animated ? 'edge-active' : flowing ? 'edge-flowing' : ''}`}
         stroke={STROKE[key]}
-        strokeWidth={active || selected ? 2 : 1.5}
+        strokeWidth={active || selected || diagram ? 2 : 1.5}
         strokeDasharray={status === 'SKIPPED' ? '4 4' : undefined}
         markerEnd={`url(#arrow-${key})`}
         style={{ transition: 'stroke 0.2s' }}
       />
+      {flowing && !prefersReducedMotion() && (
+        <g pointerEvents="none" className="flow-dot">
+          <circle r={9} fill="#2f5bff" opacity={0.14}>
+            <animateMotion dur={`${loopSeconds}s`} repeatCount="indefinite" path={path} />
+          </circle>
+          <circle r={4.5} fill="#2f5bff" stroke="#fff" strokeWidth={1.5}>
+            <animateMotion dur={`${loopSeconds}s`} repeatCount="indefinite" path={path} />
+          </circle>
+        </g>
+      )}
       {token && (
         <g pointerEvents="none">
           <circle cx={token.x} cy={token.y} r={11} fill="#2f5bff" opacity={0.14} />
@@ -109,6 +134,7 @@ function FlowEdge(props: EdgeProps<FlowEdgeType>) {
       <EdgeLabelRenderer>
         {label && (
           <div
+            data-edge-id={id}
             className={`nodrag nopan pointer-events-none absolute rounded-full border px-2 py-0.5 text-[10.5px] font-semibold leading-none ${
               branch ? BRANCH_PILL[branch] : 'border-black/10 bg-white text-gray-600'
             } ${status === 'SKIPPED' ? 'opacity-50' : ''}`}

@@ -4,6 +4,7 @@
  * Nothing here is persisted or put into undo history.
  */
 import { create } from 'zustand';
+import { isFlowchartKind } from '../components/nodes/registry';
 import { prefs } from '../db/indexedDb';
 import {
   advance,
@@ -25,6 +26,14 @@ export type SimMode = 'auto' | 'step';
 export type LogEntry = { id: number; t: number; text: string; level: LogLevel; nodeId?: string };
 
 export const SPEEDS = [0.5, 1, 2, 4] as const;
+
+/** The part of the canvas that can be simulated — flowchart shapes are drawing only. */
+function simulationGraph(): Graph {
+  const { nodes, edges } = useFlowStore.getState();
+  const simNodes = nodes.filter((n) => !isFlowchartKind(n.type));
+  const ids = new Set(simNodes.map((n) => n.id));
+  return { nodes: simNodes, edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
+}
 const EDGE_MS = 900;
 
 type SimState = {
@@ -214,8 +223,7 @@ export const useSimulationStore = create<SimState>((set, get) => {
   };
 
   const begin = (stepOnly: boolean) => {
-    const flow = useFlowStore.getState();
-    graph = { nodes: flow.nodes, edges: flow.edges };
+    graph = simulationGraph();
     const start = findStart(graph);
     if (!start) return;
     generation++;
@@ -237,8 +245,11 @@ export const useSimulationStore = create<SimState>((set, get) => {
     ...runtimeReset(),
 
     start: () => {
-      const { nodes, edges } = useFlowStore.getState();
-      const issues = validateFlow({ nodes, edges });
+      const sim = simulationGraph();
+      const onlyFlowchart = !sim.nodes.length && useFlowStore.getState().nodes.length > 0;
+      const issues: Issue[] = onlyFlowchart
+        ? [{ level: 'error', message: 'This canvas only has Flowchart shapes — their lines already animate on their own, no simulation needed.' }]
+        : validateFlow(sim);
       const errors = issues.filter((i) => i.level === 'error');
       if (errors.length) {
         set({ issues });

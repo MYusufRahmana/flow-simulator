@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { downloadProject } from '../../features/projects/io';
 import { copyWithToast, pasteWithToast } from '../../features/editor/clipboard';
 import { useImportProject } from '../../hooks/useImportProject';
 import { useFlowStore } from '../../stores/flowStore';
@@ -100,11 +99,12 @@ export function EditorTopbar() {
             <Redo2 size={18} />
           </IconButton>
           <Divider />
-          <IconButton label="Pilih semua" shortcut="Ctrl+A" disabled={isEmpty} onClick={() => useFlowStore.getState().selectAll()}>
+          <IconButton label="Pilih semua" text="Pilih semua" shortcut="Ctrl+A" disabled={isEmpty} onClick={() => useFlowStore.getState().selectAll()}>
             <SquareDashedMousePointer size={18} />
           </IconButton>
           <IconButton
             label={hasSelection ? 'Copy yang dipilih' : 'Copy semua komponen'}
+            text="Copy"
             shortcut="Ctrl+C"
             disabled={isEmpty}
             onClick={copyWithToast}
@@ -113,13 +113,14 @@ export function EditorTopbar() {
           </IconButton>
           <IconButton
             label={clipboardCount ? `Paste ${clipboardCount} komponen` : 'Paste (clipboard kosong)'}
+            text="Paste"
             shortcut="Ctrl+V"
             disabled={!clipboardCount}
-            onClick={pasteWithToast}
+            onClick={() => pasteWithToast()}
           >
             <ClipboardPaste size={18} />
           </IconButton>
-          <IconButton label="Hapus semua komponen" disabled={isEmpty} className="hover:!text-red-600" onClick={() => setConfirmDelete(true)}>
+          <IconButton label="Hapus semua komponen" text="Hapus semua" disabled={isEmpty} className="hover:!text-red-600" onClick={() => setConfirmDelete(true)}>
             <Trash2 size={17} />
           </IconButton>
           {confirmDelete && <DeleteAllDialog onClose={() => setConfirmDelete(false)} />}
@@ -127,7 +128,7 @@ export function EditorTopbar() {
       )}
       <Divider />
       {!simActive && (
-        <IconButton label="Import project (opens as a new project)" onClick={openPicker}>
+        <IconButton label="Import project (opens as a new project)" text="Import" onClick={openPicker}>
           <Upload size={18} />
         </IconButton>
       )}
@@ -138,16 +139,10 @@ export function EditorTopbar() {
         className="hidden"
         onChange={(e) => void importFiles(e.target.files)}
       />
-      <IconButton
-        label="Export project"
-        onClick={() => {
-          const p = useFlowStore.getState().toProject();
-          if (p) downloadProject(p);
-        }}
-      >
+      <IconButton label="Export (PNG, PDF, SVG, JPG, project)" text="Export" shortcut="Ctrl+E" onClick={() => useUiStore.getState().setExportOpen(true)}>
         <Download size={18} />
       </IconButton>
-      <IconButton label="Keyboard shortcuts" shortcut="?" onClick={() => useUiStore.getState().setShortcutsOpen(true)}>
+      <IconButton label="Keyboard shortcuts" text="Shortcut" shortcut="?" onClick={() => useUiStore.getState().setShortcutsOpen(true)}>
         <Keyboard size={18} />
       </IconButton>
     </div>
